@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#define INET_SOCKET_SUCCESS -1
 #define INET_SOCKET_DATA 0
 #define INET_SOCKET_CLOSE 1
 #define INET_SOCKET_ACCEPT 2
@@ -15,7 +16,7 @@ enum SOCKET_REQ
 	SOCKET_REQ_INVALID = -1,
 	SOCKET_REQ_CONNECT,
 	SOCKET_REQ_LISTEN,
-	SOCKET_REQ_EXIT,
+	SOCKET_REQ_EXIT,		//...
 	SOCKET_REQ_SEND,
 	SOCKET_REQ_CLOSE,
 	SOCKET_REQ_SHUTDOWN,
@@ -34,6 +35,7 @@ struct socket_server * socket_server_create();
 void socket_server_release(struct socket_server *);
 int socket_server_poll(struct socket_server *, struct socket_message *result, int *more);
 
+void socket_server_exit(struct socket_server*); //....
 void socket_server_close(struct socket_server *, uintptr_t opaque, int id);
 void socket_server_shutdown(struct socket_server*, uintptr_t opaque, int id);
 

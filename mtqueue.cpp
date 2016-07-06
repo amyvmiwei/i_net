@@ -79,11 +79,11 @@ int mq_queue_pop(struct message_queue * mq, struct request_message * message) {
 	SPIN_LOCK(mq);
 
 	if (mq->head != mq->tail) {
-		*message = mq->queue[mq->head++];
-		ret = 0;
-		int head = mq->head;
-		int tail = mq->tail;
-		int cap = mq->cap;
+		*message	= mq->queue[mq->head++];
+		ret			= 0;
+		int head	= mq->head;
+		int tail	= mq->tail;
+		int cap		= mq->cap;
 
 		if (head >= cap) {
 			mq->head = head = 0;

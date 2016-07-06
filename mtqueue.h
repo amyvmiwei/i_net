@@ -4,7 +4,7 @@
 
 struct request_message {
 	int type;
-	uint32_t source;
+	uintptr_t source;
 	int session;
 	void * data;
 	size_t sz;

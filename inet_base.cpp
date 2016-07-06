@@ -167,10 +167,11 @@ free_wb_list(struct socket_server *ss, struct wb_list *list) {
 
 static void 
 force_close(struct socket_server * ss, struct socket * s, struct socket_message * result) {
-	result->id = s->id;
-	result->ud = 0;
-	result->data = NULL;
-	result->opaque = s->opaque;
+	result->id		= s->id;
+	result->ud		= 0;
+	result->data	= NULL;
+	result->opaque	= s->opaque;
+
 	if (s->type == SOCKET_TYPE_INVALID) {
 		return;
 	}
@@ -508,18 +509,35 @@ send_buffer(struct socket_server *ss, struct socket *s, struct socket_message *r
 
 static int
 do_connect(struct socket_server * ss, struct request_message* request,struct socket_message * result) {
-	int id = request->session;
-	result->opaque = request->source;
-	result->id = id;
-	result->ud = 0;
-	result->data = NULL;
+	/*
+	int len = strlen(addr);
+
+	struct request_connect rc;
+	rc.port		= port;
+	memcpy(rc.host, addr, len);
+
+	struct request_message sm;
+	sm.type		= SOCKET_REQ_CONNECT;
+	sm.source	= opaque;
+	sm.session	= 0;
+	sm.sz		= sizeof(rc) + len;
+	sm.data		= MALLOC(sm.sz);
+	memcpy(sm.data, &rc, sm.sz);
+
+	mq_queue_push(ss->queue, &sm);
+	*/
+
+	int id			= reserve_id(ss);
+	result->opaque	= request->source;
+	result->id		= id;
+	result->ud		= 0;
+	result->data	= NULL;
 	
 	assert(request->sz && request->data);
 	struct request_connect * rc = (struct request_connect*)request->data;
 
-	const char * ip		= rc->host;
-	const int port		= rc->port;
-
+	const char * ip	= rc->host;
+	const int port	= rc->port;
 
 	int sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0) {
@@ -533,7 +551,9 @@ do_connect(struct socket_server * ss, struct request_message* request,struct soc
 	addr.sin_addr.s_addr	= inet_addr(ip);
 
 	int status = ::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-	if (INET_SOCKET_ERROR == status) {
+	if (0 != status && errno != EINPROGRESS) {
+		close(sock);
+		sock = -1;
 		result->data = strerror(errno);
 		goto _failed;
 	}
@@ -545,6 +565,8 @@ do_connect(struct socket_server * ss, struct request_message* request,struct soc
 		goto _failed;
 	}
 
+	ns->opaque = result->opaque;
+	
 	FREE(rc);
 
 	if (status == 0) {
@@ -555,7 +577,7 @@ do_connect(struct socket_server * ss, struct request_message* request,struct soc
 		sp_write(ss->event_fd, ns->fd, ns, true);
 	}
 
-	return -1;
+	return INET_SOCKET_SUCCESS;
 
 _failed:
 	FREE(rc);
@@ -565,11 +587,30 @@ _failed:
 
 static int
 do_listen(struct socket_server * ss, struct request_message * request, struct socket_message * result) {
-	int id = request->session;
-	result->opaque = request->source;
-	result->id = id;
-	result->ud = 0;
-	result->data = NULL;
+	/*
+	int len = strlen(addr);
+
+	struct request_listen rl;
+	rl.port		= port;
+	memcpy(rl.host, addr, len);
+
+	struct request_message sm;
+	sm.type		= SOCKET_REQ_LISTEN;
+	sm.source	= opaque;
+	sm.session	= 0;
+	sm.sz		= sizeof(rl) +len;
+	sm.data		= MALLOC(sm.sz);
+	memcpy(sm.data, &rl, sm.sz);
+
+	mq_queue_push(ss->queue, &sm);
+	*/
+
+	//int id = request->session;
+	int id			= reserve_id(ss);
+	result->opaque	= request->source;
+	result->id		= id;
+	result->ud		= 0;
+	result->data	= NULL;
 
 	assert(request->sz && request->data);
 	struct request_listen * rl = (struct request_listen*)request->data;
@@ -580,7 +621,7 @@ do_listen(struct socket_server * ss, struct request_message * request, struct so
 	int listenSocket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (listenSocket < 0) {
 		result->data = strerror(errno);
-		goto _failed;
+		goto _failed_create_socket;
 	}
 
 	sockaddr_in addrIn;
@@ -610,12 +651,15 @@ do_listen(struct socket_server * ss, struct request_message * request, struct so
 	s->type = SOCKET_TYPE_LISTEN;
 	s->opaque = request->source;
 	result->data = "listen_start";
-	return INET_SOCKET_OPEN;
+	//return INET_SOCKET_OPEN;
 	return -1;
 
 _failed:
-	FREE(rl);
 	close(listenSocket);
+
+_failed_create_socket:
+	FREE(rl);
+	
 	result->opaque = request->source;
 	result->id = id;
 	result->ud = 0;
@@ -626,6 +670,17 @@ _failed:
 
 static int 
 do_closesocket(struct socket_server* ss, struct request_message *request, bool shutdown, struct socket_message *result) {
+	/*
+	struct request_message sm;
+	sm.type		= SOCKET_REQ_CLOSE;
+	sm.source	= opaque;
+	sm.session	= id;
+	sm.sz		= 0;
+	sm.data		= NULL;
+
+	mq_queue_push(ss->queue, &sm);
+	*/
+	
 	int id = request->session;
 	struct socket *s = &ss->slot[HASH_ID(id)];
 	if (s->type == SOCKET_TYPE_INVALID || s->id != id) {
@@ -694,6 +749,19 @@ append_sendbuffer(struct socket_server *ss, struct socket *s, struct request_mes
  */
 static int
 do_send_socket(struct socket_server *ss, struct request_message * request, struct socket_message *result, int priority, const uint8_t *udp_addres) {
+	/*
+	struct request_message sm;
+	sm.source	= 0;
+	sm.session	= id;
+	sm.type		= SOCKET_REQ_SEND;
+	sm.sz		= sz;
+	//sm.data		= (void *)buffer;
+	sm.data		= MALLOC(sm.sz);
+	memcpy(sm.data, buffer, sm.sz);
+
+	mq_queue_push(ss->queue, &sm);
+	*/
+	
 	int id = request->session;
 	struct socket * s = &ss->slot[HASH_ID(id)];
 	struct send_object so;
@@ -751,7 +819,7 @@ do_send_socket(struct socket_server *ss, struct request_message * request, struc
 			//if (priority == PRIORITY_LOW) {
 			//	append_sendbuffer_low(ss, s, request);
 			//} else {
-			//	append_sendbuffer(ss, s, request, 0);
+				append_sendbuffer(ss, s, request, 0);
 			//}
 		//} else {
 		//	if (udp_address == NULL) {
@@ -761,7 +829,6 @@ do_send_socket(struct socket_server *ss, struct request_message * request, struc
 		//}
 	}
 	return -1;
-
 }
 
 
@@ -771,25 +838,17 @@ process_req(struct socket_server * ss, struct socket_message * result) {
 	while (!mq_queue_pop(ss->queue, &req)) {
 		switch (req.type) {
 		case SOCKET_REQ_CONNECT:
-			if (do_connect(ss, &req, result))
-				return 1;
-			break;
+			return do_connect(ss, &req, result);
 		case SOCKET_REQ_LISTEN:
-			if (do_listen(ss, &req, result))
-				return 1;
-			break;
+			return do_listen(ss, &req, result);
 		case SOCKET_REQ_EXIT:
-			do_exit(ss, &req, result);
-			break;
+			return do_exit(ss, &req, result);
 		case SOCKET_REQ_SEND:
-			do_send_socket(ss, &req, result, 0, 0);
-			break;
+			return do_send_socket(ss, &req, result, 0, 0);
 		case SOCKET_REQ_CLOSE:
-			do_closesocket(ss, &req, false, result);
-			break;
+			return do_closesocket(ss, &req, false, result);
 		case SOCKET_REQ_SHUTDOWN:
-			do_closesocket(ss, &req, true, result);
-			break;
+			return do_closesocket(ss, &req, true, result);
 		default:
 			break;
 		}
@@ -798,18 +857,38 @@ process_req(struct socket_server * ss, struct socket_message * result) {
 	return 0;
 }
 
+static void
+clear_close_event(struct socket_server* ss, struct socket_message* result, int type) {
+	if (type == INET_SOCKET_CLOSE || type == INET_SOCKET_ERROR) {
+		int id = result->id;
+		int i;
+		for (i = ss->event_index; i < ss->event_n; ++i) {
+			struct event *e = &ss->ev[i];
+			struct socket *s = (struct socket*)e->s;
+			if (s) {
+				if (s->type == SOCKET_TYPE_INVALID && s->id == id) {
+					e->s = NULL;
+				}
+			}
+		}
+	}
+}
 
 int socket_server_poll(struct socket_server * ss, struct socket_message *result, int *more) {
 	for (;;) {
 		//1.cmd.
-		if (process_req(ss, result)) {
-			return 1;
+		int type = process_req(ss, result);
+		if (-1 != type) {
+			clear_close_event(ss, result, type);
+			return type;
 		}
 
 		//2.
 		if (ss->event_n == ss->event_index) {
-			if (process_req(ss, result)) {
-				return 1;
+			int type = process_req(ss, result);
+			if (-1 != type) {
+				clear_close_event(ss, result, type);
+				return type;
 			}
 
 			ss->event_n = sp_wait(ss->event_fd, &ss->ev[0], MAX_EVENT);
@@ -876,7 +955,7 @@ int socket_server_poll(struct socket_server * ss, struct socket_message *result,
 
 void socket_server_connect(struct socket_server * ss, uintptr_t opaque, const char * addr, int port)
 {
-	int len = strlen(addr);
+	size_t len = strlen(addr);
 
 	struct request_connect rc;
 	rc.port		= port;
@@ -895,17 +974,18 @@ void socket_server_connect(struct socket_server * ss, uintptr_t opaque, const ch
 
 void socket_server_listen(struct socket_server *ss, uintptr_t opaque, const char * addr, int port, int backlog)
 {
-	int len = strlen(addr);
+	size_t len = strlen(addr);
+
 	struct request_listen rl;
 	rl.port		= port;
 	memcpy(rl.host, addr, len);
 
 	struct request_message sm;
-	sm.type	= SOCKET_REQ_LISTEN;
+	sm.type		= SOCKET_REQ_LISTEN;
 	sm.source	= opaque;
-	sm.session = 0;
+	sm.session	= 0;
 	sm.sz		= sizeof(rl) +len;
-	sm.data	= MALLOC(sm.sz);
+	sm.data		= MALLOC(sm.sz);
 	memcpy(sm.data, &rl, sm.sz);
 
 	mq_queue_push(ss->queue, &sm);
@@ -914,22 +994,22 @@ void socket_server_listen(struct socket_server *ss, uintptr_t opaque, const char
 void socket_server_close(struct socket_server * ss, uintptr_t opaque, int id)
 {
 	struct request_message sm;
-	sm.type = SOCKET_REQ_CLOSE;
-	sm.source = opaque;
-	sm.session = id;
-	sm.sz = 0;
-	sm.data = NULL;
+	sm.type		= SOCKET_REQ_CLOSE;
+	sm.source	= opaque;
+	sm.session	= id;
+	sm.sz		= 0;
+	sm.data		= NULL;
 
 	mq_queue_push(ss->queue, &sm);
 }
 
 void socket_server_shutdown(struct socket_server * ss, uintptr_t opaque, int id) {
 	struct request_message sm;
-	sm.type = SOCKET_REQ_SHUTDOWN;
-	sm.source = opaque;
-	sm.session = id;
-	sm.sz = 0;
-	sm.data = NULL;
+	sm.type		= SOCKET_REQ_SHUTDOWN;
+	sm.source	= opaque;
+	sm.session	= id;
+	sm.sz		= 0;
+	sm.data		= NULL;
 
 	mq_queue_push(ss->queue, &sm);
 }
@@ -938,12 +1018,20 @@ void socket_server_shutdown(struct socket_server * ss, uintptr_t opaque, int id)
 void socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz)
 {
 	struct request_message sm;
-	sm.source = 0;
-	sm.session = id;
-	sm.type = SOCKET_REQ_SEND;
-	sm.sz = sz;
-	sm.data = (void *)buffer;
+	sm.source	= 0;
+	sm.session	= id;
+	sm.type		= SOCKET_REQ_SEND;
+	sm.sz		= sz;
+	//sm.data		= (void *)buffer;
+	sm.data		= MALLOC(sm.sz);
+	memcpy(sm.data, buffer, sm.sz);
 
 	mq_queue_push(ss->queue, &sm);
 }
 
+void socket_server_exit(struct socket_server* ss)
+{
+	struct request_message sm;
+	sm.type = SOCKET_REQ_EXIT;
+	mq_queue_push(ss->queue, &sm);
+}

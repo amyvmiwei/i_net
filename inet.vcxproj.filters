@@ -7,13 +7,11 @@
     <ClInclude Include="socket_select.h" />
     <ClInclude Include="winsocket.h" />
     <ClInclude Include="inet_base.h" />
-    <ClInclude Include="buffer.h" />
     <ClInclude Include="mtqueue.h" />
     <ClInclude Include="atomic.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inet_base.cpp" />
-    <ClCompile Include="buffer.cpp" />
     <ClCompile Include="mtqueue.cpp" />
   </ItemGroup>
 </Project>
